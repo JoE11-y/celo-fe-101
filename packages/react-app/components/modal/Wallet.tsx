@@ -1,0 +1,145 @@
+// This component is used to add a product to the marketplace and show the user's cEUR balance
+
+// Importing the dependencies
+import { useState } from "react";
+// import ethers to convert the product price to wei
+import { ethers } from "ethers";
+// Import the toast library to display notifications
+import { toast } from "react-toastify";
+// Import the useContractCall hook to read how many products are in the marketplace via the contract
+import { useContractCall } from "@/hooks/contract/useContractRead";
+// Import the useDebounce hook to debounce the input fields
+import { useDebounce } from "use-debounce";
+// Import our custom useContractSend hook to write a product to the marketplace contract
+import { useContractSend } from "@/hooks/contract/useContractWrite";
+// Import Cart
+import { WalletIcon, BanknotesIcon } from "@heroicons/react/24/outline";
+// Import UserAccount hook to get user address
+import { useAccount } from "wagmi";
+
+// The Cart component is used to show items in user order
+const Wallet = () => {
+  // The visible state is used to toggle the modal
+  const [visible, setVisible] = useState(false);
+  const {address} = useAccount()
+  // Use the useContractCall hook to get user product balance in marketplace
+  const { data } = useContractCall("getBalance", [address], true);
+  const userBalance = data ? ethers.utils.formatEther(data.toString()) : 0;
+
+  // The loading state is used to display a loading message
+  const [loading, setLoading] = useState("");
+
+  // Use the useContractSend hook to use our writeProduct function on the marketplace contract and add a product to the marketplace
+  const { writeAsync: withdrawFunds } = useContractSend("withdrawFunds", []);
+
+  // Define function that handles the creation of a product through the marketplace contract
+  const handleWithdrawFunds = async () => {
+    console.log(Number(userBalance))
+    if(Number(userBalance) <= 0){
+        throw new Error("Your sales balance is low");
+    }
+
+    if (!withdrawFunds) {
+      throw new Error ("Failed to withdraw sales balance");
+    }
+    setLoading("Withdrawing...");
+    const purchaseTx = await withdrawFunds();
+    setLoading("Waiting for confirmation...");
+    // Wait for the transaction to be mined
+    await purchaseTx.wait();
+    // Close the modal and clear the input fields after the product is added to the marketplace
+    setVisible(false);
+  };
+
+  // Define function that handles the creation of a product, if a user submits the product form
+  const withdraw = async (e: any) => {
+    e.preventDefault();
+
+    try {
+      // Display a notification while the product is being added to the marketplace
+      await toast.promise(handleWithdrawFunds(), {
+        pending: "Withdrawing sales balance...",
+        success: "Balance withdrawn successfully",
+        error: "Something went wrong. Try again.",
+      });
+      // Display an error message if something goes wrong
+    } catch (e: any) {
+      console.log({ e });
+      toast.error(e?.message || "Something went wrong. Try again.");
+      // Clear the loading state after the product is added to the marketplace
+    } finally {
+      setLoading("");
+    }
+  };
+
+  // Define the JSX that will be rendered
+  return (
+    <div className={"flex flex-row w-full justify-between"}>
+      <div>
+        {/* Add Product Button that opens the modal */}
+        <button
+          type="button"
+          onClick={() => setVisible(true)}
+          className="inline-flex items-center px-1 pt-1 text-sm font-medium text-gray-900"
+          data-bs-toggle="modal"
+          data-bs-target="#exampleModalCenter">
+            <div className="px-6 py-2.5 hover:bg-gray-700 hover:shadow-lg focus:bg-gray-700 focus:shadow-lg focus:outline-none focus:ring-0 active:bg-gray-800 active:shadow-lg transition duration-150 ease-in-out">
+                Sales
+                <WalletIcon className="block h-6 w-6" aria-hidden="true" />
+            </div>
+
+        </button>
+
+        {/* Modal */}
+        {visible && (
+          <div
+            className="fixed z-40 overflow-y-auto top-0 w-full left-0"
+            id="modal">
+            {/* Form with input fields for the product, that triggers the addProduct function on submit */}
+            <form onSubmit={withdraw}>
+              <div className="flex items-center justify-center min-height-100vh pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+                <div className="fixed inset-0 transition-opacity">
+                  <div className="absolute inset-0 bg-gray-900 opacity-75" />
+                </div>
+                <span className="hidden sm:inline-block sm:align-middle sm:h-screen">
+                  &#8203;
+                </span>
+                <div
+                  className="inline-block align-center bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="modal-headline">
+                  {/* Input fields for the product */}
+                  <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <BanknotesIcon className="block h-6 w-6" aria-hidden="true" />Your Sales Balance
+                    <p>
+                     {userBalance} cEUR
+                    </p>
+                </div>
+                  {/* Button to close the modal */}
+                  <div className="bg-gray-200 px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      className="py-2 px-4 bg-gray-500 text-white rounded hover:bg-gray-700 mr-2"
+                      onClick={() => setVisible(false)}>
+                      <i className="fas fa-times"></i> Cancel
+                    </button>
+                    {/* Button to add the product to the marketplace */}
+                    <button
+                      type="submit"
+                      disabled={!!loading || !withdrawFunds}
+                      className="py-2 px-4 bg-blue-500 text-white rounded hover:bg-blue-700 mr-2">
+                      {loading ? loading : "Withdraw"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </form>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default Wallet;
