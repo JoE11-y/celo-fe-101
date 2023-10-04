@@ -33,12 +33,15 @@ interface IERC20Token {
     );
 }
 
-// Contract for the marketplace
+/**
+ * @title Marketplace
+ * @dev This contract represents a decentralized marketplace for products.
+ */
 contract Marketplace {
     // Keeps track of the number of products in the marketplace
     uint256 internal productsLength = 0;
     // Address of the cEURToken
-    address internal cEURTokenAddress = 0x10c892A6EC43a53E45D0B916B4b7D383B1b78C0F;
+    address internal cEURTokenAddress;
 
     // Structure for a product
     struct Product {
@@ -73,12 +76,31 @@ contract Marketplace {
     // Mapping containing product owner balance in contract
     mapping(address => uint256) internal ownerBalance;
 
-    modifier isOwner(uint _index, address caller) {
-        require(products[_index].owner == caller, "not owner");
+    /**
+     * @dev Modifier to check if the caller is the owner of a product.
+     * @param _index The index of the product in the products mapping.
+     */
+    modifier isOwner(uint256 _index) {
+        require(products[_index].owner == msg.sender, "Not owner");
         _;
     }
 
-    // Writes a new product to the marketplace
+    /**
+     * @dev Constructor to initialize the marketplace with the address of the cEURToken.
+     * @param _cEURTokenAddress The address of the cEURToken.
+     */
+    constructor(address _cEURTokenAddress) {
+        cEURTokenAddress = _cEURTokenAddress;
+    }
+
+    /**
+     * @dev Writes a new product to the marketplace.
+     * @param _name The name of the product.
+     * @param _image The link to an image of the product.
+     * @param _description The description of the product.
+     * @param _location The location of the product.
+     * @param _price The price of the product in tokens.
+     */
     function writeProduct(
         string memory _name,
         string memory _image,
@@ -86,13 +108,9 @@ contract Marketplace {
         string memory _location,
         uint256 _price
     ) public {
-        // Add check to ensure that price of product is greater than 0
         require(_price > 0, "Price must be greater than 0");
-        // Number of times the product has been sold is initially 0 because it has not been sold yet
         uint256 _sold = 0;
-        // Adds a new Product struct to the products mapping
         products[productsLength] = Product(
-            // Sender's address is set as the owner
             payable(msg.sender),
             _name,
             _image,
@@ -101,17 +119,16 @@ contract Marketplace {
             _price,
             _sold
         );
-        // Set that the product with product id exists
         productExists[productsLength] = true;
-        // Increases the number of products in the marketplace by 1
         productsLength++;
     }
 
-    // Reads a product from the marketplace
-    function readProduct(
-        // Index of the product
-        uint256 _index
-    )
+    /**
+     * @dev Reads the details of a product from the marketplace.
+     * @param _index The index of the product in the products mapping.
+     * @return Details of the product, including owner, name, image link, description, location, price, and number of times sold.
+     */
+    function readProduct(uint256 _index)
         public
         view
         returns (
@@ -124,7 +141,6 @@ contract Marketplace {
             uint256
         )
     {
-        // Returns the details of the product
         return (
             products[_index].owner,
             products[_index].name,
@@ -136,74 +152,81 @@ contract Marketplace {
         );
     }
 
-    // Places order to buy products from the marketplace
+    /**
+     * @dev Places an order to buy products from the marketplace.
+     * @param _cartItems An array of CartItem structs representing the products and their quantities to buy.
+     */
     function placeOrder(CartItem[] memory _cartItems) public payable {
         uint256 _totalAmount;
         for (uint256 i = 0; i < _cartItems.length; i++) {
-            // get order
             CartItem memory _item = _cartItems[i];
-            // check if product exists in contract
-            require(productExists[_item.productId] == true, "Product does not exist");
-            // get product
+            require(productExists[_item.productId], "Product does not exist");
             Product storage _product = products[_item.productId];
-            // calculate total amount to sent
-            _totalAmount += _product.price * _item.quantity;
-            // add balance to product owner mapping
-            ownerBalance[_product.owner] += _product.price * _item.quantity;
-            // update number of products sold
+            uint256 _orderAmount = _product.price * _item.quantity;
+            _totalAmount += _orderAmount;
+            ownerBalance[_product.owner] += _orderAmount;
             _product.sold += _item.quantity;
         }
         
-        // transfer amount
         require(
             IERC20Token(cEURTokenAddress).transferFrom(
-                // Sender's address is the buyer
                 msg.sender,
-                // Receiver's address is the contract
                 address(this),
-                // Amount of tokens to transfer is the total amount of order
                 _totalAmount
             ),
-            // If transfer fails, throw an error message
             "Transfer failed."
         );
     }
 
-    // Product owner withdraw funds from contract
-    function withdrawFunds() public payable {
-        require(ownerBalance[msg.sender] > 0, "Empty balance");
-
-        uint256 amountToSend = ownerBalance[msg.sender];
+    /**
+     * @dev Allows the product owner to withdraw their funds from the contract.
+     */
+    function withdrawFunds() public {
+        uint256 balance = ownerBalance[msg.sender];
+        require(balance > 0, "Empty balance");
         ownerBalance[msg.sender] = 0;
-
-        // transfer amount
-        require(IERC20Token(cEURTokenAddress).transfer(payable(msg.sender), amountToSend), "Transfer failed");
+        require(
+            IERC20Token(cEURTokenAddress).transfer(payable(msg.sender), balance),
+            "Transfer failed"
+        );
     }
 
-    // Remove a product from the marketplace
-    function removeProduct(
-        uint _indexToRemove
-    ) public isOwner(_indexToRemove, msg.sender) {
-        delete (products[_indexToRemove]);
+    /**
+     * @dev Removes a product from the marketplace. Only the owner of the product can perform this action.
+     * @param _indexToRemove The index of the product in the products mapping to be removed.
+     */
+    function removeProduct(uint256 _indexToRemove) public isOwner(_indexToRemove) {
+        delete products[_indexToRemove];
         productExists[_indexToRemove] = false;
     }
 
-
-    // Update pricing of a product from the marketplace
-    function updateProduct(
-        uint _indexToUpdate,
-        uint _newPrice
-    ) public isOwner(_indexToUpdate, msg.sender) {
+    /**
+     * @dev Updates the price of a product in the marketplace. Only the owner of the product can perform this action.
+     * @param _indexToUpdate The index of the product in the products mapping to be updated.
+     * @param _newPrice The new price for the product.
+     */
+    function updateProduct(uint256 _indexToUpdate, uint256 _newPrice) public isOwner(_indexToUpdate) {
         products[_indexToUpdate].price = _newPrice;
     }
 
-    // Returns the number of products in the marketplace
+    /**
+     * @dev Returns the number of products in the marketplace.
+     * @return The total number of products.
+     */
     function getProductsLength() public view returns (uint256) {
-        return (productsLength);
+        return productsLength;
     }
 
-    // Return Balance of Owner
+    /**
+     * @dev Returns the balance of a product owner in the contract.
+     * @param _owner The address of the product owner.
+     * @return The balance of the product owner.
+     */
     function getBalance(address _owner) public view returns(uint256){
         return ownerBalance[_owner];
+    }
+
+    receive() external payable {
+        // Fallback function to receive Ether (if needed)
     }
 }
